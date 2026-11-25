@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/widgets/tmdb_key_dialog.dart';
 import 'package:another_iptv_player/database/database.dart';
 import 'package:another_iptv_player/screens/settings/subtitle_settings_section.dart';
 import 'package:another_iptv_player/services/service_locator.dart';
@@ -137,6 +138,28 @@ class _GeneralSettingsWidgetState extends State<GeneralSettingsWidget> {
                   context,
                   MaterialPageRoute(
                       builder: (context) => PlaylistScreen()),
+                );
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.movie_filter),
+            title: const Text('Infos films (TMDB)'),
+            subtitle: const Text(
+              'Résumé en français, note, acteurs et recherche par acteur',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final ok = await showTmdbKeyDialog(context);
+              if (ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Clé TMDB enregistrée'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
               }
             },

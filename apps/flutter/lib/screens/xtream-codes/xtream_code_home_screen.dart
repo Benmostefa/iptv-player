@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/screens/actor_search_screen.dart';
 import 'package:another_iptv_player/l10n/localization_extension.dart';
 import 'package:another_iptv_player/screens/search_screen.dart';
 import 'package:flutter/material.dart';
@@ -195,6 +196,15 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
       ),
       elevation: 0,
       actions: [
+        if (contentType != ContentType.liveStream)
+          IconButton(
+            tooltip: 'Rechercher par acteur',
+            icon: const Icon(Icons.person_search),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ActorSearchScreen()),
+            ),
+          ),
         IconButton(
           icon: const Icon(Icons.search),
           onPressed: () => _navigateToSearch(context, contentType),
@@ -226,6 +236,15 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
       ),
       elevation: 0,
       actions: [
+        if (contentType != ContentType.liveStream)
+          IconButton(
+            tooltip: 'Rechercher par acteur',
+            icon: const Icon(Icons.person_search),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ActorSearchScreen()),
+            ),
+          ),
         IconButton(
           icon: const Icon(Icons.search),
           onPressed: () => _navigateToSearch(context, contentType),

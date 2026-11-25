@@ -52,7 +52,7 @@ class FavoritesSection extends StatelessWidget {
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
-              if (onSeeAllTap != null && favorites.length > 10)
+              if (onSeeAllTap != null && favorites.isNotEmpty)
                 TextButton(
                   onPressed: onSeeAllTap,
                   child: Text(context.loc.see_all_favorites),
@@ -102,7 +102,7 @@ class FavoritesSection extends StatelessWidget {
               }
 
               final contentItem =
-                  snapshot.data ?? _convertFavoriteToContentItem(favorite);
+                  snapshot.data ?? favoriteToContentItem(favorite);
 
               return ContentCard(
                 content: contentItem,
@@ -134,7 +134,7 @@ class FavoritesSection extends StatelessWidget {
     );
   }
 
-  ContentItem _convertFavoriteToContentItem(Favorite favorite) {
+  static ContentItem favoriteToContentItem(Favorite favorite) {
     if (isXtreamCode) {
       switch (favorite.contentType) {
         case ContentType.liveStream:

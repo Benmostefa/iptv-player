@@ -100,6 +100,28 @@ class FavoritesController extends ChangeNotifier {
     }
   }
 
+  /// Favori quel que soit l'abonnement (comparaison par titre si besoin).
+  Future<bool> isFavoriteItem(ContentItem contentItem) async {
+    try {
+      return await _repository.isFavoriteItem(contentItem);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Supprime un favori (et ses doublons d'anciens abonnements).
+  Future<bool> removeFavoriteEntry(Favorite favorite) async {
+    try {
+      _setError(null);
+      await _repository.removeFavoriteEntry(favorite);
+      await loadFavorites();
+      return true;
+    } catch (e) {
+      _setError('Erreur lors de la suppression du favori : $e');
+      return false;
+    }
+  }
+
   Future<List<Favorite>> getFavoritesByContentType(ContentType contentType) async {
     try {
       return await _repository.getFavoritesByContentType(contentType);

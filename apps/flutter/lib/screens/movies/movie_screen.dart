@@ -5,6 +5,13 @@ import 'package:another_iptv_player/models/api_configuration_model.dart';
 import 'package:another_iptv_player/models/content_type.dart';
 import 'package:another_iptv_player/models/playlist_content_model.dart';
 import 'package:another_iptv_player/models/watch_history.dart';
+import 'package:another_iptv_player/repositories/favorites_repository.dart';
+import 'package:another_iptv_player/screens/actor_search_screen.dart';
+import 'package:another_iptv_player/services/catalog_index.dart';
+import 'package:another_iptv_player/services/tmdb_service.dart';
+import 'package:another_iptv_player/utils/content_grouping.dart';
+import 'package:another_iptv_player/utils/title_normalizer.dart';
+import 'package:another_iptv_player/widgets/tmdb_key_dialog.dart';
 import 'package:another_iptv_player/repositories/iptv_repository.dart';
 import 'package:another_iptv_player/services/app_state.dart';
 import 'package:another_iptv_player/services/watch_history_service.dart';
@@ -36,9 +43,26 @@ class _MovieScreenState extends State<MovieScreen> {
   bool _isLoadingVodInfo = true;
   List<ContentItem> _categoryMovies = [];
 
+  // Versions du film (4K / HD / SD / langues) et version choisie.
+  List<ContentItem> _versions = [];
+  late ContentItem _selected;
+
+  // Favori (commun à tous les abonnements).
+  final FavoritesRepository _favoritesRepository = FavoritesRepository();
+  bool _isFavorite = false;
+
+  // Infos TMDB (résumé FR, note, acteurs).
+  TmdbDetails? _tmdb;
+  bool _tmdbConfigured = true;
+  bool _tmdbLanguageSet = false;
+
   @override
   void initState() {
     super.initState();
+    _selected = widget.contentItem;
+    _versions = widget.contentItem.variants.isNotEmpty
+        ? List.of(widget.contentItem.variants)
+        : [widget.contentItem];
     _watchHistoryService = WatchHistoryService();
 
     if (isXtreamCode && AppState.currentPlaylist != null) {
@@ -57,6 +81,102 @@ class _MovieScreenState extends State<MovieScreen> {
     _loadWatchHistory();
     _loadVodInfo();
     _loadCategoryMovies();
+    _loadVersions();
+    _loadFavorite();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_tmdbLanguageSet) {
+      _tmdbLanguageSet = true;
+      TmdbService.instance.language =
+          Localizations.localeOf(context).languageCode;
+    }
+  }
+
+  Future<void> _loadFavorite() async {
+    try {
+      final fav = await _favoritesRepository.isFavoriteItem(widget.contentItem);
+      if (mounted) setState(() => _isFavorite = fav);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFavorite() async {
+    try {
+      final result = await _favoritesRepository.toggleFavorite(widget.contentItem);
+      if (!mounted) return;
+      setState(() => _isFavorite = result);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result
+                ? context.loc.added_to_favorites
+                : context.loc.removed_from_favorites,
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Favorite error: $e');
+    }
+  }
+
+  /// Cherche les autres versions du même film dans tout le catalogue.
+  Future<void> _loadVersions() async {
+    if (!isXtreamCode) return;
+    try {
+      final found = await CatalogIndex.movieVersions(widget.contentItem.name);
+      final byId = <String, ContentItem>{
+        for (final v in _versions) v.id: v,
+      };
+      for (final v in found) {
+        byId.putIfAbsent(v.id, () => v);
+      }
+      if (!mounted) return;
+      setState(() {
+        _versions = ContentGrouping.sortVersions(byId.values.toList());
+      });
+    } catch (e) {
+      debugPrint('Error loading versions: $e');
+    }
+  }
+
+  /// Lit un champ de get_vod_info (dans "info" ou à la racine).
+  dynamic _infoField(String key) {
+    final info = _vodInfo;
+    if (info == null) return null;
+    final nested = info['info'];
+    if (nested is Map && nested[key] != null && nested[key] != '') {
+      return nested[key];
+    }
+    return info[key];
+  }
+
+  Future<void> _loadTmdb() async {
+    final configured = await TmdbService.instance.isConfigured;
+    if (!mounted) return;
+    if (!configured) {
+      setState(() => _tmdbConfigured = false);
+      return;
+    }
+    final parsed = TitleNormalizer.parse(widget.contentItem.name);
+    final tmdbId = _infoField('tmdb_id')?.toString();
+    String? year = parsed.year;
+    final release = _infoField('releasedate') ?? _infoField('release_date');
+    if (year == null && release is String && release.length >= 4) {
+      year = release.substring(0, 4);
+    }
+    final details = await TmdbService.instance.getMovie(
+      tmdbId: tmdbId,
+      title: parsed.title,
+      year: year,
+    );
+    if (!mounted) return;
+    setState(() {
+      _tmdbConfigured = true;
+      _tmdb = details;
+    });
   }
 
   Future<void> _loadCategoryMovies() async {
@@ -69,7 +189,7 @@ class _MovieScreenState extends State<MovieScreen> {
           final movies = await _repository!.getMovies(categoryId: categoryId);
           if (movies != null && mounted) {
             setState(() {
-              _categoryMovies = movies
+              _categoryMovies = ContentGrouping.groupMovies(movies
                   .map((x) => ContentItem(
                         x.streamId,
                         x.name,
@@ -78,7 +198,7 @@ class _MovieScreenState extends State<MovieScreen> {
                         vodStream: x,
                         containerExtension: x.containerExtension,
                       ))
-                  .toList();
+                  .toList());
             });
           }
         }
@@ -151,6 +271,11 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   Future<void> _loadVodInfo() async {
+    await _loadVodInfoFromProvider();
+    await _loadTmdb();
+  }
+
+  Future<void> _loadVodInfoFromProvider() async {
     if (!isXtreamCode || _repository == null) {
       if (!mounted) return;
       setState(() {
@@ -194,9 +319,11 @@ class _MovieScreenState extends State<MovieScreen> {
 
   String? get _posterUrl {
     if (_vodInfo != null) {
-      final cover = _vodInfo!['cover_big'] ?? _vodInfo!['cover'];
+      final cover = _infoField('cover_big') ?? _infoField('movie_image') ??
+          _infoField('cover');
       if (cover is String && cover.isNotEmpty) return cover;
     }
+    if (_tmdb?.posterUrl != null) return _tmdb!.posterUrl;
     if (widget.contentItem.coverPath?.isNotEmpty == true) {
       return widget.contentItem.coverPath;
     }
@@ -207,8 +334,9 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   String? get _backdropUrl {
+    if (_tmdb?.backdropUrl != null) return _tmdb!.backdropUrl;
     if (_vodInfo != null) {
-      final backdrop = _vodInfo!['backdrop_path'];
+      final backdrop = _infoField('backdrop_path');
       if (backdrop is List && backdrop.isNotEmpty) {
         return backdrop.first.toString();
       } else if (backdrop is String && backdrop.isNotEmpty) {
@@ -219,8 +347,10 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   String? get _plotSummary {
+    final tmdbOverview = _tmdb?.overview?.trim();
+    if (tmdbOverview != null && tmdbOverview.isNotEmpty) return tmdbOverview;
     if (_vodInfo != null) {
-      final plot = _vodInfo!['plot'];
+      final plot = _infoField('plot') ?? _infoField('description');
       if (plot is String && plot.isNotEmpty) {
         return plot;
       }
@@ -229,8 +359,11 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   String? get _directorInfo {
+    if (_tmdb != null && _tmdb!.directors.isNotEmpty) {
+      return _tmdb!.directors.join(', ');
+    }
     if (_vodInfo != null) {
-      final director = _vodInfo!['director'];
+      final director = _infoField('director');
       if (director is String && director.isNotEmpty) {
         return director;
       }
@@ -240,7 +373,7 @@ class _MovieScreenState extends State<MovieScreen> {
 
   String? get _castInfo {
     if (_vodInfo != null) {
-      final cast = _vodInfo!['cast'];
+      final cast = _infoField('cast') ?? _infoField('actors');
       if (cast is String && cast.isNotEmpty) {
         return cast;
       }
@@ -250,10 +383,21 @@ class _MovieScreenState extends State<MovieScreen> {
 
   int? get _duration {
     if (_vodInfo != null) {
-      final duration = _vodInfo!['duration'];
+      final duration = _infoField('duration_secs') ?? _infoField('duration');
       if (duration is int) {
         return duration;
       }
+      if (duration is String) {
+        final secs = int.tryParse(duration);
+        if (secs != null) return secs;
+        final parts = duration.split(':').map(int.tryParse).toList();
+        if (parts.length == 3 && !parts.contains(null)) {
+          return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
+        }
+      }
+    }
+    if (_tmdb?.runtimeMinutes != null && _tmdb!.runtimeMinutes! > 0) {
+      return _tmdb!.runtimeMinutes! * 60;
     }
     return widget.contentItem.duration?.inSeconds;
   }
@@ -277,6 +421,23 @@ class _MovieScreenState extends State<MovieScreen> {
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.5),
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              tooltip: _isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
+              icon: Icon(
+                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: _isFavorite ? Colors.red : Colors.white,
+              ),
+              onPressed: _toggleFavorite,
+            ),
+          ),
+        ],
       ),
       body: Stack(
         fit: StackFit.expand,
@@ -383,12 +544,24 @@ class _MovieScreenState extends State<MovieScreen> {
           _buildInfoChips(context)!,
           const SizedBox(height: 24),
         ],
+        if (_buildVersionsSection(context) != null) ...[
+          _buildVersionsSection(context)!,
+          const SizedBox(height: 24),
+        ],
         if (_buildDescriptionSection(context) != null) ...[
           _buildDescriptionSection(context)!,
           const SizedBox(height: 24),
         ],
+        if (_buildCastSection(context) != null) ...[
+          _buildCastSection(context)!,
+          const SizedBox(height: 24),
+        ],
         if (_buildExtraDetails(context) != null) ...[
           _buildExtraDetails(context)!,
+          const SizedBox(height: 24),
+        ],
+        if (!_tmdbConfigured) ...[
+          _buildTmdbHint(context),
           const SizedBox(height: 24),
         ],
         if (_buildTrailerButton(context) != null) ...[
@@ -419,12 +592,24 @@ class _MovieScreenState extends State<MovieScreen> {
                 _buildInfoChips(context)!,
                 const SizedBox(height: 24),
               ],
+              if (_buildVersionsSection(context) != null) ...[
+                _buildVersionsSection(context)!,
+                const SizedBox(height: 24),
+              ],
               if (_buildDescriptionSection(context) != null) ...[
                 _buildDescriptionSection(context)!,
                 const SizedBox(height: 24),
               ],
+              if (_buildCastSection(context) != null) ...[
+                _buildCastSection(context)!,
+                const SizedBox(height: 24),
+              ],
               if (_buildExtraDetails(context) != null) ...[
                 _buildExtraDetails(context)!,
+                const SizedBox(height: 24),
+              ],
+              if (!_tmdbConfigured) ...[
+                _buildTmdbHint(context),
                 const SizedBox(height: 24),
               ],
               if (_buildTrailerButton(context) != null) ...[
@@ -477,8 +662,9 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   Widget _buildTitle(BuildContext context, {required TextAlign textAlign}) {
+    final clean = _tmdb?.title ?? TitleNormalizer.parse(widget.contentItem.name).title;
     return Text(
-      widget.contentItem.name,
+      clean,
       textAlign: textAlign,
       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
             color: Colors.white,
@@ -495,6 +681,35 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   Widget? _buildRatingSection(BuildContext context) {
+    final tmdb = _tmdb;
+    if (tmdb != null && tmdb.voteCount > 0) {
+      return InkWell(
+        onTap: () => launchUrl(
+          Uri.parse(tmdb.pageUrl),
+          mode: LaunchMode.externalApplication,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_rounded, color: Colors.amber.shade500, size: 28),
+            const SizedBox(width: 8),
+            Text(
+              '${tmdb.voteAverage.toStringAsFixed(1)}/10',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'TMDB · ${tmdb.voteCount} votes',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
     final vod = widget.contentItem.vodStream;
     if (vod == null) {
       return null;
@@ -553,8 +768,13 @@ class _MovieScreenState extends State<MovieScreen> {
     }
 
     // Tür/Genre
-    final genre = widget.contentItem.vodStream?.genre ??
-        (_vodInfo != null ? _vodInfo!['genre'] : null);
+    dynamic genre = widget.contentItem.vodStream?.genre;
+    if (genre is! String || genre.trim().isEmpty) genre = _infoField('genre');
+    if ((genre is! String || genre.trim().isEmpty) &&
+        _tmdb != null &&
+        _tmdb!.genres.isNotEmpty) {
+      genre = _tmdb!.genres.join(', ');
+    }
     if (genre is String && genre.trim().isNotEmpty) {
       chips.add(
         _InfoChip(
@@ -565,8 +785,8 @@ class _MovieScreenState extends State<MovieScreen> {
     }
 
     // Format
-    final format = (widget.contentItem.containerExtension ??
-            widget.contentItem.vodStream?.containerExtension)
+    final format = (_selected.containerExtension ??
+            _selected.vodStream?.containerExtension)
         ?.trim();
     if (format != null && format.isNotEmpty) {
       chips.add(
@@ -578,10 +798,12 @@ class _MovieScreenState extends State<MovieScreen> {
     }
 
     // Yayın Yılı / Released
-    if (_vodInfo != null) {
-      final releaseDate = _vodInfo!['releaseDate'] ??
-          _vodInfo!['release_date'] ??
-          _vodInfo!['year'];
+    {
+      final releaseDate = _infoField('releasedate') ??
+          _infoField('releaseDate') ??
+          _infoField('release_date') ??
+          _infoField('year') ??
+          _tmdb?.releaseDate;
       if (releaseDate is String && releaseDate.trim().isNotEmpty) {
         chips.add(
           _InfoChip(
@@ -650,7 +872,7 @@ class _MovieScreenState extends State<MovieScreen> {
 
     // Oyuncular
     final cast = _castInfo;
-    if (cast != null && cast.isNotEmpty) {
+    if (cast != null && cast.isNotEmpty && (_tmdb?.cast.isEmpty ?? true)) {
       entries.add(
         _DetailEntry(
           icon: Icons.people,
@@ -700,6 +922,144 @@ class _MovieScreenState extends State<MovieScreen> {
               .toList(),
         ),
       ],
+    );
+  }
+
+  /// Choix de la version : 4K, Full HD, HD, SD, langue...
+  Widget? _buildVersionsSection(BuildContext context) {
+    if (_versions.length < 2) return null;
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Choisir la version (${_versions.length})',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _versions.map((v) {
+            final parsed = TitleNormalizer.parse(v.name);
+            final ext = (v.containerExtension ?? v.vodStream?.containerExtension ?? '')
+                .trim()
+                .toUpperCase();
+            var label = parsed.versionLabel;
+            if (label.isEmpty) label = 'Standard';
+            if (ext.isNotEmpty) label = '$label · $ext';
+            final selected = v.id == _selected.id;
+            return Tooltip(
+              message: v.name,
+              child: ChoiceChip(
+                label: Text(label),
+                selected: selected,
+                avatar: parsed.qualityRank >= 4
+                    ? const Icon(Icons.four_k, size: 18)
+                    : null,
+                onSelected: (_) => setState(() => _selected = v),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Acteurs avec photo ; un appui ouvre leurs films disponibles.
+  Widget? _buildCastSection(BuildContext context) {
+    final cast = _tmdb?.cast ?? const <TmdbPerson>[];
+    if (cast.isEmpty) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.loc.cast,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Colors.white70,
+              ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: cast.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              final p = cast[i];
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ActorFilmographyScreen(
+                      personId: p.id,
+                      name: p.name,
+                      photoUrl: p.photoUrl,
+                    ),
+                  ),
+                ),
+                child: SizedBox(
+                  width: 84,
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundColor: Colors.grey.shade800,
+                        backgroundImage: p.photoUrl != null
+                            ? CachedNetworkImageProvider(p.photoUrl!)
+                            : null,
+                        child: p.photoUrl == null
+                            ? const Icon(Icons.person, color: Colors.white54)
+                            : null,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        p.name,
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (p.role != null && p.role!.isNotEmpty)
+                        Text(
+                          p.role!,
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTmdbHint(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final ok = await showTmdbKeyDialog(context);
+        if (ok) _loadTmdb();
+      },
+      icon: const Icon(Icons.info_outline),
+      label: const Text('Résumé FR, note et acteurs : ajouter une clé TMDB'),
+      style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
     );
   }
 
@@ -817,7 +1177,10 @@ class _MovieScreenState extends State<MovieScreen> {
       return;
     }
 
-    final trailerKey = vod.youtubeTrailer;
+    final providerTrailer = vod.youtubeTrailer;
+    final trailerKey = (providerTrailer != null && providerTrailer.isNotEmpty)
+        ? providerTrailer
+        : _tmdb?.trailerKey;
     final languageCode = Localizations.localeOf(context).languageCode;
 
     final String urlString;
@@ -844,14 +1207,24 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   void _openPlayer() {
+    // Dans la file de lecture, le film est remplacé par la version choisie.
+    var replaced = false;
+    final queue = _categoryMovies.map((m) {
+      if (!replaced &&
+          (m.id == _selected.id ||
+              m.id == widget.contentItem.id ||
+              ContentGrouping.isSameWork(m.name, _selected.name))) {
+        replaced = true;
+        return _selected;
+      }
+      return m;
+    }).toList();
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => _MoviePlayerPage(
-          contentItem: widget.contentItem,
-          queue:
-              _categoryMovies.isNotEmpty
-                  ? _categoryMovies
-                  : [widget.contentItem],
+          contentItem: _selected,
+          queue: replaced ? queue : [_selected],
         ),
       ),
     );

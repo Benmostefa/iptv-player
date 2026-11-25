@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/screens/all_favorites_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/watch_history_controller.dart';
@@ -123,11 +124,7 @@ class _WatchHistoryScreenState extends State<WatchHistoryScreen> {
   }
 
   void _removeFavorite(Favorite favorite) async {
-    final success = await _favoritesController.removeFavorite(
-      favorite.streamId,
-      favorite.contentType,
-      episodeId: favorite.episodeId,
-    );
+    final success = await _favoritesController.removeFavoriteEntry(favorite);
     
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -140,8 +137,12 @@ class _WatchHistoryScreenState extends State<WatchHistoryScreen> {
   }
 
   void _showAllFavorites() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Favoriler listesi yakında eklenecek')),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            AllFavoritesScreen(controller: _favoritesController),
+      ),
     );
   }
 }

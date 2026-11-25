@@ -7,12 +7,14 @@ class PlaylistCard extends StatelessWidget {
   final Playlist playlist;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback? onEdit;
 
   const PlaylistCard({
     super.key,
     required this.playlist,
     required this.onTap,
     required this.onDelete,
+    this.onEdit,
   });
 
   @override
@@ -31,7 +33,7 @@ class PlaylistCard extends StatelessWidget {
               _PlaylistIcon(type: playlist.type),
               const SizedBox(width: 16),
               Expanded(child: _PlaylistInfo(playlist: playlist)),
-              _PlaylistMenu(onDelete: onDelete),
+              _PlaylistMenu(onDelete: onDelete, onEdit: onEdit),
             ],
           ),
         ),
@@ -133,13 +135,25 @@ class _TypeChip extends StatelessWidget {
 
 class _PlaylistMenu extends StatelessWidget {
   final VoidCallback onDelete;
+  final VoidCallback? onEdit;
 
-  const _PlaylistMenu({required this.onDelete});
+  const _PlaylistMenu({required this.onDelete, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       itemBuilder: (context) => [
+        if (onEdit != null)
+          const PopupMenuItem(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit, size: 20),
+                SizedBox(width: 8),
+                Text('Modifier / nouveau code'),
+              ],
+            ),
+          ),
         PopupMenuItem(
           value: 'delete',
           child: Row(
@@ -154,6 +168,8 @@ class _PlaylistMenu extends StatelessWidget {
       onSelected: (value) {
         if (value == 'delete') {
           onDelete();
+        } else if (value == 'edit') {
+          onEdit?.call();
         }
       },
     );

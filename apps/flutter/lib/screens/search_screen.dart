@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/screens/actor_search_screen.dart';
 import 'package:another_iptv_player/l10n/localization_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:another_iptv_player/models/content_type.dart';
@@ -7,6 +8,7 @@ import 'package:another_iptv_player/services/app_state.dart';
 import 'package:another_iptv_player/utils/navigate_by_content_type.dart';
 import 'package:another_iptv_player/utils/responsive_helper.dart';
 import '../../widgets/content_card.dart';
+import 'package:another_iptv_player/utils/content_grouping.dart';
 
 class SearchScreen extends StatefulWidget {
   final ContentType contentType;
@@ -149,7 +151,7 @@ class SearchScreenState extends State<SearchScreen> {
       }
 
       setState(() {
-        contentItems = searchResults;
+        contentItems = ContentGrouping.groupMovies(searchResults);
         isLoading = false;
       });
     } catch (e) {
@@ -180,6 +182,15 @@ class SearchScreenState extends State<SearchScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
         actions: [
+          if (widget.contentType != ContentType.liveStream)
+            IconButton(
+              tooltip: 'Rechercher par acteur',
+              icon: const Icon(Icons.person_search),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ActorSearchScreen()),
+              ),
+            ),
           if (isSearching)
             IconButton(icon: Icon(Icons.clear), onPressed: stopSearch)
           else

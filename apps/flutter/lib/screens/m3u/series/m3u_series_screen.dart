@@ -77,9 +77,8 @@ class _M3uSeriesScreenState extends State<M3uSeriesScreen> {
   }
 
   Future<void> _checkFavoriteStatus() async {
-    final isFavorite = await _favoritesController.isFavorite(
-      widget.contentItem.id,
-      widget.contentItem.contentType,
+    final isFavorite = await _favoritesController.isFavoriteItem(
+      widget.contentItem,
     );
     if (mounted) {
       setState(() {

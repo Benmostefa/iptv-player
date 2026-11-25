@@ -22,6 +22,10 @@ class ContentItem {
   final int? season;
   final M3uItem? m3uItem;
 
+  /// Autres versions du même film (4K, HD, SD, autre langue...).
+  /// Rempli quand les doublons sont regroupés sous une seule affiche.
+  List<ContentItem> variants = [];
+
   ContentItem(
     this.id,
     this.name,

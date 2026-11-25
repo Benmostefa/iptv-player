@@ -6,6 +6,8 @@ import 'package:another_iptv_player/services/app_state.dart';
 import 'package:another_iptv_player/services/service_locator.dart';
 import 'package:another_iptv_player/utils/get_playlist_type.dart';
 import 'package:another_iptv_player/repositories/m3u_repository.dart';
+import 'package:another_iptv_player/services/catalog_index.dart';
+import 'package:another_iptv_player/utils/content_grouping.dart';
 import 'package:uuid/uuid.dart';
 
 class FavoritesRepository {
@@ -78,14 +80,34 @@ class FavoritesRepository {
 
   Future<List<Favorite>> getAllFavorites() async {
     final playlistId = AppState.currentPlaylist!.id;
-    return await _database.getFavoritesByPlaylist(playlistId);
+    final all = await _database.getAllFavorites();
+
+    // Ceux de l'abonnement actuel d'abord, puis les plus récents.
+    all.sort((a, b) {
+      final aCur = a.playlistId == playlistId ? 0 : 1;
+      final bCur = b.playlistId == playlistId ? 0 : 1;
+      if (aCur != bCur) return aCur.compareTo(bCur);
+      return b.createdAt.compareTo(a.createdAt);
+    });
+
+    // Un seul exemplaire par contenu, même s'il a été ajouté avec
+    // plusieurs abonnements ou en plusieurs versions.
+    final unique = <Favorite>[];
+    for (final f in all) {
+      final dup = unique.any((u) =>
+          u.contentType == f.contentType &&
+          u.episodeId == f.episodeId &&
+          (u.streamId == f.streamId || sameName(f.contentType, u.name, f.name)));
+      if (!dup) unique.add(f);
+    }
+    return unique;
   }
 
   Future<List<Favorite>> getFavoritesByContentType(
     ContentType contentType,
   ) async {
-    final playlistId = AppState.currentPlaylist!.id;
-    return await _database.getFavoritesByContentType(playlistId, contentType);
+    final all = await getAllFavorites();
+    return all.where((f) => f.contentType == contentType).toList();
   }
 
   Future<List<Favorite>> getLiveStreamFavorites() async {
@@ -113,24 +135,57 @@ class FavoritesRepository {
     );
   }
 
-  Future<bool> toggleFavorite(ContentItem contentItem) async {
-    final playlistId = AppState.currentPlaylist!.id;
-    final isCurrentlyFavorite = await _database.isFavorite(
-      playlistId,
-      contentItem.id,
-      contentItem.contentType,
-      null
-    );
+  // ---------------------------------------------------------------------
+  // Favoris globaux : ils ne dépendent plus de l'abonnement (playlist).
+  // Un favori enregistré avec un ancien code d'accès est retrouvé dans le
+  // nouvel abonnement grâce à son identifiant ou, à défaut, à son titre.
+  // ---------------------------------------------------------------------
 
-    if (isCurrentlyFavorite) {
-      await removeFavorite(
-        contentItem.id,
-        contentItem.contentType
-      );
+  static bool sameName(ContentType type, String a, String b) {
+    if (type == ContentType.liveStream) {
+      return a.trim().toLowerCase() == b.trim().toLowerCase();
+    }
+    return ContentGrouping.isSameWork(a, b);
+  }
+
+  bool _matches(Favorite f, ContentItem item) {
+    if (f.contentType != item.contentType || f.episodeId != null) return false;
+    final currentId = AppState.currentPlaylist?.id;
+    if (f.playlistId == currentId && f.streamId == item.id) return true;
+    return sameName(item.contentType, f.name, item.name);
+  }
+
+  /// Vrai si ce contenu (ou une autre version du même film) est en favori,
+  /// quel que soit l'abonnement avec lequel il a été ajouté.
+  Future<bool> isFavoriteItem(ContentItem contentItem) async {
+    final all = await _database.getAllFavorites();
+    return all.any((f) => _matches(f, contentItem));
+  }
+
+  Future<bool> toggleFavorite(ContentItem contentItem) async {
+    final all = await _database.getAllFavorites();
+    final matches = all.where((f) => _matches(f, contentItem)).toList();
+
+    if (matches.isNotEmpty) {
+      for (final f in matches) {
+        await _database.deleteFavorite(f.id);
+      }
       return false;
-    } else {
-      await addFavorite(contentItem);
-      return true;
+    }
+    await addFavorite(contentItem);
+    return true;
+  }
+
+  /// Supprime un favori et ses doublons (autres abonnements / versions).
+  Future<void> removeFavoriteEntry(Favorite favorite) async {
+    final all = await _database.getAllFavorites();
+    for (final f in all) {
+      final same = f.id == favorite.id ||
+          (f.contentType == favorite.contentType &&
+              f.episodeId == favorite.episodeId &&
+              (f.streamId == favorite.streamId ||
+                  sameName(f.contentType, f.name, favorite.name)));
+      if (same) await _database.deleteFavorite(f.id);
     }
   }
 
@@ -148,6 +203,54 @@ class FavoritesRepository {
   }
 
   Future<ContentItem?> getContentItemFromFavorite(Favorite favorite) async {
+    final currentId = AppState.currentPlaylist?.id;
+    if (favorite.playlistId != currentId &&
+        favorite.episodeId == null &&
+        isXtreamCode) {
+      // Favori ajouté avec un autre abonnement : on vérifie que l'identifiant
+      // correspond bien au même contenu, sinon on le cherche par son titre.
+      final byId = await _resolveById(favorite, strict: true);
+      if (byId != null &&
+          sameName(favorite.contentType, byId.name, favorite.name)) {
+        return byId;
+      }
+      final byName = await _resolveByName(favorite);
+      if (byName != null) return byName;
+    }
+    return _resolveById(favorite);
+  }
+
+  Future<ContentItem?> _resolveByName(Favorite favorite) async {
+    try {
+      if (favorite.contentType == ContentType.liveStream) {
+        final results = await AppState.xtreamCodeRepository!
+            .searchLiveStreams(favorite.name);
+        for (final live in results) {
+          if (sameName(ContentType.liveStream, live.name, favorite.name)) {
+            return ContentItem(
+              live.streamId,
+              live.name,
+              live.streamIcon,
+              ContentType.liveStream,
+              liveStream: live,
+            );
+          }
+        }
+        return null;
+      }
+      return await CatalogIndex.findByName(
+        favorite.name,
+        favorite.contentType,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<ContentItem?> _resolveById(
+    Favorite favorite, {
+    bool strict = false,
+  }) async {
     try {
       if (isXtreamCode) {
         final repository = AppState.xtreamCodeRepository!;
@@ -178,8 +281,10 @@ class FavoritesRepository {
             if (movie != null) {
               return ContentItem(
                 favorite.streamId,
-                favorite.name,
-                favorite.imagePath ?? '',
+                movie.name,
+                movie.streamIcon.isNotEmpty
+                    ? movie.streamIcon
+                    : favorite.imagePath ?? '',
                 ContentType.vod,
                 containerExtension: movie.containerExtension,
                 vodStream: movie,
@@ -255,6 +360,7 @@ class FavoritesRepository {
         }
       }
 
+      if (strict) return null;
       return ContentItem(
         favorite.streamId,
         favorite.name,
@@ -262,6 +368,7 @@ class FavoritesRepository {
         favorite.contentType,
       );
     } catch (e) {
+      if (strict) return null;
       return ContentItem(
         favorite.streamId,
         favorite.name,

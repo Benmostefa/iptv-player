@@ -1341,7 +1341,7 @@ class AppDatabase extends _$AppDatabase {
                     tbl.name.contains(query),
               )
               ..orderBy([(tbl) => OrderingTerm.asc(tbl.name)])
-              ..limit(20))
+              ..limit(80))
             .get();
 
     return movieList.map((x) => VodStream.fromDriftVodStream(x)).toList();

@@ -45,10 +45,8 @@ class _VideoFavoriteWidgetState extends State<VideoFavoriteWidget> {
 
     if (currentContent.contentType == ContentType.liveStream ||
         currentContent.contentType == ContentType.vod) {
-      final isFavorite = await _favoritesController.isFavorite(
-        currentContent.id,
-        currentContent.contentType,
-      );
+      final isFavorite =
+          await _favoritesController.isFavoriteItem(currentContent);
       if (mounted) {
         setState(() {
           _isFavorite = isFavorite;

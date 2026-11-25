@@ -7,6 +7,8 @@ import 'package:another_iptv_player/models/view_state.dart';
 import 'package:another_iptv_player/repositories/iptv_repository.dart';
 import 'package:another_iptv_player/services/app_state.dart';
 import '../repositories/user_preferences.dart';
+import '../utils/content_grouping.dart';
+import '../services/catalog_index.dart';
 import '../screens/xtream-codes/xtream_code_data_loader_screen.dart';
 
 class XtreamCodeHomeController extends ChangeNotifier {
@@ -73,6 +75,7 @@ class XtreamCodeHomeController extends ChangeNotifier {
 
   XtreamCodeHomeController(bool all) {
     _pageController = PageController();
+    CatalogIndex.invalidate();
     _loadCategories(all);
   }
 
@@ -177,7 +180,7 @@ class XtreamCodeHomeController extends ChangeNotifier {
 
           var categoryViewModel = CategoryViewModel(
             category: movieCategory,
-            contentItems: movies
+            contentItems: ContentGrouping.groupMovies(movies
                 .map(
                   (x) => ContentItem(
                 x.streamId,
@@ -188,7 +191,7 @@ class XtreamCodeHomeController extends ChangeNotifier {
                 vodStream: x,
               ),
             )
-                .toList(),
+                .toList()),
           );
           if (!all) {
             if (!await UserPreferences.getHiddenCategory(

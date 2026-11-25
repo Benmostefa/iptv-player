@@ -125,9 +125,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
   Future<void> _checkFavoriteStatus() async {
-    final isFavorite = await _favoritesController.isFavorite(
-      widget.contentItem.id,
-      widget.contentItem.contentType,
+    final isFavorite = await _favoritesController.isFavoriteItem(
+      widget.contentItem,
     );
 
     if (mounted) {

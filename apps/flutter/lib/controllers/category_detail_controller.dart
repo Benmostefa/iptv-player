@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:another_iptv_player/models/category_view_model.dart';
 import 'package:another_iptv_player/models/playlist_content_model.dart';
 import '../services/content_service.dart';
+import '../utils/content_grouping.dart';
 
 class CategoryDetailController extends ChangeNotifier {
   final CategoryViewModel category;
@@ -38,7 +39,9 @@ class CategoryDetailController extends ChangeNotifier {
   Future<void> loadContent() async {
     try {
       _setLoading(true);
-      _contentItems = await _contentService.fetchContentByCategory(category);
+      _contentItems = ContentGrouping.groupMovies(
+        await _contentService.fetchContentByCategory(category),
+      );
       _genres = _extractGenres(_contentItems);
       _selectedGenre = null;
       _setLoading(false);
