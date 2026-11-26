@@ -1,8 +1,11 @@
+import 'package:another_iptv_player/utils/title_normalizer.dart';
+import 'package:another_iptv_player/widgets/kids_guard.dart';
 import 'package:another_iptv_player/l10n/localization_extension.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:another_iptv_player/models/playlist_content_model.dart';
 import 'package:another_iptv_player/models/content_type.dart';
+import 'package:another_iptv_player/utils/rating_utils.dart';
 
 class ContentCard extends StatelessWidget {
   final ContentItem content;
@@ -59,7 +62,9 @@ class ContentCard extends StatelessWidget {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: content.imagePath.isNotEmpty
+                    child: KidsGuard(
+                      item: content,
+                      child: content.imagePath.isNotEmpty
                         ? CachedNetworkImage(
                       imageUrl: content.imagePath,
                       fit: _getFitForContentType(),
@@ -81,6 +86,7 @@ class ContentCard extends StatelessWidget {
                           _buildTitleCard(context),
                     )
                         : _buildTitleCard(context),
+                    ),
                   ),
                   if (ratingBadge != null) ratingBadge,
                   if (isRecent)
@@ -117,7 +123,7 @@ class ContentCard extends StatelessWidget {
                       ),
                       color: Colors.black.withOpacity(0.7),
                       child: Text(
-                        content.name,
+                        _displayName,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
@@ -139,6 +145,13 @@ class ContentCard extends StatelessWidget {
     return cardWidget;
   }
 
+  /// Titre propre ("Stick (2025)") au lieu du nom brut "|FHD| Stick (2025 MULTI)".
+  String get _displayName {
+    if (content.contentType == ContentType.liveStream) return content.name;
+    final p = TitleNormalizer.parse(content.name);
+    return p.year != null ? '${p.title} (${p.year})' : p.title;
+  }
+
   BoxFit _getFitForContentType() {
     if (content.contentType == ContentType.liveStream) {
       return BoxFit.contain;
@@ -155,7 +168,7 @@ class ContentCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Text(
-            content.name,
+            _displayName,
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 11,
@@ -173,19 +186,13 @@ class ContentCard extends StatelessWidget {
   }
 
   Widget? _buildRatingBadge(BuildContext context) {
-    final dynamic rawRating = content.contentType == ContentType.series
-        ? content.seriesStream?.rating
-        : content.vodStream?.rating;
-
-    final double? rating = _parseRating(rawRating);
+    final double? rating = providerRating(content);
     if (rating == null || rating <= 0) {
       return null;
     }
 
     final colorScheme = Theme.of(context).colorScheme;
-    final formattedRating = rating % 1 == 0
-        ? rating.toStringAsFixed(0)
-        : rating.toStringAsFixed(1);
+    final formattedRating = formatRating(rating);
 
     return Positioned(
       top: 6,

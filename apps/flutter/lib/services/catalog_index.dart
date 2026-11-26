@@ -117,6 +117,18 @@ class CatalogIndex {
     return ContentGrouping.sortVersions(items);
   }
 
+  /// Toutes les versions d'une série (FHD, SD, MULTI...).
+  static Future<List<ContentItem>> seriesVersions(String rawName) async {
+    await ensureLoaded();
+    final p = TitleNormalizer.parse(rawName);
+    final entries = _series[p.key] ?? const <_Entry<SeriesStream>>[];
+    final items = entries
+        .where((e) => _yearMatches(p.year, e.year))
+        .map((e) => seriesToItem(e.item))
+        .toList();
+    return ContentGrouping.sortVersions(items);
+  }
+
   /// Cherche un film par titre (et titre original) + année facultative.
   static Future<List<ContentItem>> findMovies(
     List<String> titles, {

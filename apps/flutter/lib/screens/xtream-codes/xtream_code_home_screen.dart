@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/widgets/kids_guard.dart';
 import 'package:another_iptv_player/widgets/content_browser.dart';
 import 'package:another_iptv_player/widgets/update_dialog.dart';
 import 'package:another_iptv_player/screens/actor_search_screen.dart';
@@ -210,6 +211,7 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
       ),
       elevation: 0,
       actions: [
+        if (contentType != ContentType.liveStream) const KidsModeButton(),
         if (contentType != ContentType.liveStream)
           IconButton(
             tooltip: 'Rechercher par acteur',
@@ -250,6 +252,7 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
       ),
       elevation: 0,
       actions: [
+        if (contentType != ContentType.liveStream) const KidsModeButton(),
         if (contentType != ContentType.liveStream)
           IconButton(
             tooltip: 'Rechercher par acteur',

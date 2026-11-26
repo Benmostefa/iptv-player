@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/services/kids_mode.dart';
 import 'package:another_iptv_player/database/database.dart';
 import 'package:another_iptv_player/models/category_view_model.dart';
 import 'package:another_iptv_player/models/content_type.dart';
@@ -62,6 +63,9 @@ class _ContentBrowserState extends State<ContentBrowser> {
   @override
   void initState() {
     super.initState();
+    for (final c in widget.categories) {
+      KidsMode.registerCategory(c.category.categoryId, c.category.categoryName);
+    }
     _load();
   }
 
@@ -133,8 +137,8 @@ class _ContentBrowserState extends State<ContentBrowser> {
     }
 
     var result = raw;
-    if (widget.contentType == ContentType.vod && raw.isNotEmpty) {
-      // Une seule affiche par film (calcul en arrière-plan).
+    if (raw.isNotEmpty) {
+      // Une seule affiche par film / série (calcul en arrière-plan).
       final keys = await compute(
         ContentGrouping.groupKeysFor,
         raw.map((i) => i.name).toList(),

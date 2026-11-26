@@ -12,7 +12,7 @@ class ContentGrouping {
   /// (y compris lui-même) sont rangées dans [ContentItem.variants].
   /// Les chaînes et séries sont renvoyées telles quelles.
   static List<ContentItem> groupMovies(List<ContentItem> items) {
-    if (items.isEmpty || items.first.contentType != ContentType.vod) {
+    if (items.isEmpty || items.first.contentType == ContentType.liveStream) {
       return items;
     }
 

@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/widgets/kids_guard.dart';
 import 'dart:ui';
 
 import 'package:another_iptv_player/l10n/localization_extension.dart';
@@ -11,6 +12,7 @@ import 'package:another_iptv_player/services/catalog_index.dart';
 import 'package:another_iptv_player/services/tmdb_service.dart';
 import 'package:another_iptv_player/utils/content_grouping.dart';
 import 'package:another_iptv_player/utils/title_normalizer.dart';
+import 'package:another_iptv_player/utils/rating_utils.dart';
 import 'package:another_iptv_player/widgets/tmdb_key_dialog.dart';
 import 'package:another_iptv_player/repositories/iptv_repository.dart';
 import 'package:another_iptv_player/services/app_state.dart';
@@ -421,6 +423,7 @@ class _MovieScreenState extends State<MovieScreen> {
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
+        actions: const [KidsModeButton(onDarkBackground: true)],
       ),
       body: Stack(
         fit: StackFit.expand,
@@ -478,10 +481,14 @@ class _MovieScreenState extends State<MovieScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => Container(color: Colors.black),
+        KidsGuard(
+          item: widget.contentItem,
+          showEye: false,
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => Container(color: Colors.black),
+          ),
         ),
         // Blur if using poster or just to dim backdrop
         BackdropFilter(
@@ -621,16 +628,20 @@ class _MovieScreenState extends State<MovieScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          placeholder: (context, url) => Container(
-            color: Colors.grey.shade900,
-            child: const Center(child: CircularProgressIndicator()),
-          ),
-          errorWidget: (context, url, error) => Container(
-            color: Colors.grey.shade900,
-            child: const Icon(Icons.movie, size: 50, color: Colors.grey),
+        child: KidsGuard(
+          item: widget.contentItem,
+          compact: false,
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Container(
+              color: Colors.grey.shade900,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+            errorWidget: (context, url, error) => Container(
+              color: Colors.grey.shade900,
+              child: const Icon(Icons.movie, size: 50, color: Colors.grey),
+            ),
           ),
         ),
       ),
@@ -657,75 +668,60 @@ class _MovieScreenState extends State<MovieScreen> {
   }
 
   Widget? _buildRatingSection(BuildContext context) {
+    // Note principale = la même que sur l'affiche (fournisseur), sur 10.
+    final main = providerRating(widget.contentItem);
     final tmdb = _tmdb;
-    if (tmdb != null && tmdb.voteCount > 0) {
-      return InkWell(
-        onTap: () => launchUrl(
-          Uri.parse(tmdb.pageUrl),
-          mode: LaunchMode.externalApplication,
+    final hasTmdb = tmdb != null && tmdb.voteCount > 0;
+    if (main == null && !hasTmdb) return null;
+
+    final children = <Widget>[];
+    if (main != null) {
+      children.addAll([
+        Icon(Icons.star_rounded, color: Colors.amber.shade500, size: 28),
+        const SizedBox(width: 8),
+        Text(
+          '${formatRating(main)}/10',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.star_rounded, color: Colors.amber.shade500, size: 28),
-            const SizedBox(width: 8),
-            Text(
-              '${tmdb.voteAverage.toStringAsFixed(1)}/10',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'TMDB · ${tmdb.voteCount} votes',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
+      ]);
+    }
+    if (hasTmdb) {
+      final t = tmdb!;
+      if (children.isNotEmpty) children.add(const SizedBox(width: 16));
+      children.add(
+        InkWell(
+          onTap: () => launchUrl(
+            Uri.parse(t.pageUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (main == null) ...[
+                Icon(Icons.star_rounded, color: Colors.amber.shade500, size: 28),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                main == null
+                    ? '${t.voteAverage.toStringAsFixed(1)}/10  TMDB · ${t.voteCount} votes'
+                    : 'TMDB ${t.voteAverage.toStringAsFixed(1)} · ${t.voteCount} votes',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: main == null ? 18 : 13,
+                  fontWeight: main == null ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
-
-    final vod = widget.contentItem.vodStream;
-    if (vod == null) {
-      return null;
-    }
-
-    String? label;
-    final parsedRating = double.tryParse(vod.rating.trim());
-    if (parsedRating != null && parsedRating > 0) {
-      final formatted = parsedRating % 1 == 0
-          ? parsedRating.toStringAsFixed(0)
-          : parsedRating.toStringAsFixed(1);
-      label = '$formatted/10';
-    } else if (vod.rating5based > 0) {
-      final formatted = vod.rating5based % 1 == 0
-          ? vod.rating5based.toStringAsFixed(0)
-          : vod.rating5based.toStringAsFixed(1);
-      label = '$formatted/5';
-    }
-
-    if (label == null) {
-      return null;
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.star_rounded,
-          color: Colors.amber.shade500,
-          size: 28,
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: Colors.white, // Ensure visibility on backdrop
-              ),
-        ),
-      ],
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [Row(mainAxisSize: MainAxisSize.min, children: children)],
     );
   }
 

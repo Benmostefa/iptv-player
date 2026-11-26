@@ -1,3 +1,9 @@
+import 'package:another_iptv_player/utils/get_playlist_type.dart';
+import 'package:another_iptv_player/services/catalog_index.dart';
+import 'package:another_iptv_player/utils/content_grouping.dart';
+import 'package:another_iptv_player/utils/title_normalizer.dart';
+import 'package:another_iptv_player/widgets/kids_guard.dart';
+import 'package:another_iptv_player/utils/rating_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:another_iptv_player/database/database.dart';
 import 'package:another_iptv_player/models/api_configuration_model.dart';
@@ -35,9 +41,69 @@ class _SeriesScreenState extends State<SeriesScreen> {
   // Last opened episode for this series (for Continue Watching button)
   EpisodesData? _lastOpenedEpisode;
 
+  // Versions de la série (FHD, SD, MULTI...).
+  List<ContentItem> _versions = [];
+
+  Future<void> _loadVersions() async {
+    final byId = <String, ContentItem>{
+      for (final v in widget.contentItem.variants) v.id: v,
+    };
+    try {
+      if (isXtreamCode) {
+        for (final v in await CatalogIndex.seriesVersions(widget.contentItem.name)) {
+          byId.putIfAbsent(v.id, () => v);
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _versions = ContentGrouping.sortVersions(byId.values.toList()));
+  }
+
+  void _openVersion(ContentItem v) {
+    if (v.id == widget.contentItem.id) return;
+    v.variants = _versions;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => SeriesScreen(contentItem: v)),
+    );
+  }
+
+  Widget _buildVersionsSection() {
+    if (_versions.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Choisir la version (${_versions.length})',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _versions.map((v) {
+              var label = TitleNormalizer.parse(v.name).versionLabel;
+              if (label.isEmpty) label = 'Standard';
+              return Tooltip(
+                message: v.name,
+                child: ChoiceChip(
+                  label: Text(label),
+                  selected: v.id == widget.contentItem.id,
+                  onSelected: (_) => _openVersion(v),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadVersions();
     _initializeRepository();
     _favoritesController = FavoritesController();
     _watchHistoryService = WatchHistoryService();
@@ -193,6 +259,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
               snap: false,
               backgroundColor: Colors.transparent,
               foregroundColor: Colors.white,
+              actions: const [KidsModeButton(onDarkBackground: true)],
               flexibleSpace: FlexibleSpaceBar(
                 background: Stack(
                   children: [
@@ -201,7 +268,11 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       child: SizedBox(
                         width: double.infinity,
                         height: double.infinity,
-                        child: _buildCoverImage(),
+                        child: KidsGuard(
+                          item: widget.contentItem,
+                          compact: false,
+                          child: _buildCoverImage(),
+                        ),
                       ),
                     ),
                     Container(
@@ -348,6 +419,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildVersionsSection(),
           // Rating Bölümü
           _buildRatingSection(),
           const SizedBox(height: 20),
@@ -440,39 +512,19 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
 
   Widget _buildRatingSection() {
-    final rating = seriesInfo?.rating5based ?? 0;
-    final ratingText =
-        widget.contentItem.seriesStream?.rating5based?.toStringAsFixed(1) ??
-            '0.0';
-
+    // Même note que sur l'affiche (sur 10).
+    final r = providerRating(widget.contentItem);
+    if (r == null) return const SizedBox.shrink();
     return Row(
       children: [
-        ...List.generate(5, (index) {
-          return Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Icon(
-              index < rating.round()
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-              color: Colors.amber,
-              size: 24,
-            ),
-          );
-        }),
-        const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.amber.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            '$ratingText/5',
-            style: TextStyle(
-              color: Colors.amber.shade700,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
+        Icon(Icons.star_rounded, color: Colors.amber.shade500, size: 26),
+        const SizedBox(width: 8),
+        Text(
+          '${formatRating(r)}/10',
+          style: TextStyle(
+            color: Colors.amber.shade600,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
           ),
         ),
       ],

@@ -114,6 +114,10 @@ class TmdbService {
 
   Future<bool> get isConfigured async => (await getApiKey()) != null;
 
+  /// Version synchrone (valable après un premier appel à [getApiKey]).
+  bool get isConfiguredSync =>
+      _loaded && _apiKey != null && _apiKey!.trim().isNotEmpty;
+
   Future<void> setApiKey(String? key) async {
     final prefs = await SharedPreferences.getInstance();
     final clean = key?.trim() ?? '';
@@ -362,5 +366,80 @@ class TmdbService {
     }
     list.sort((a, b) => b.popularity.compareTo(a.popularity));
     return list;
+  }
+
+  /// Âge conseillé (0 = tous publics) et genre horreur, pour le mode enfants.
+  /// Renvoie null si l'œuvre n'est pas trouvée ou sans clé TMDB.
+  Future<({int? age, bool horror})?> getAgeInfo({
+    required bool isTv,
+    String? tmdbId,
+    required String title,
+    String? year,
+  }) async {
+    if (!await isConfigured) return null;
+    int? id = int.tryParse(tmdbId ?? '');
+    if (id == null || id <= 0) {
+      id = await _searchId(isTv: isTv, title: title, year: year);
+      if (id == null && year != null) {
+        id = await _searchId(isTv: isTv, title: title, year: null);
+      }
+    }
+    if (id == null) return null;
+
+    final data = await _get('/${isTv ? 'tv' : 'movie'}/$id', {
+      'append_to_response': isTv ? 'content_ratings' : 'release_dates',
+    });
+    if (data == null) return null;
+
+    final genreIds = (data['genres'] as List? ?? [])
+        .whereType<Map>()
+        .map((g) => g['id'])
+        .toSet();
+    // 27 = Horreur (films). Pour les séries : Mystère/Thriller n'est pas bloqué.
+    final horror = genreIds.contains(27);
+
+    final byCountry = <String, List<String>>{};
+    if (isTv) {
+      for (final r in (data['content_ratings']?['results'] as List? ?? [])) {
+        if (r is Map && r['rating'] is String) {
+          byCountry.putIfAbsent(r['iso_3166_1'] as String, () => []).add(r['rating']);
+        }
+      }
+    } else {
+      for (final r in (data['release_dates']?['results'] as List? ?? [])) {
+        if (r is! Map) continue;
+        for (final d in (r['release_dates'] as List? ?? [])) {
+          if (d is Map && d['certification'] is String && (d['certification'] as String).isNotEmpty) {
+            byCountry.putIfAbsent(r['iso_3166_1'] as String, () => []).add(d['certification']);
+          }
+        }
+      }
+    }
+
+    int? age;
+    for (final c in ['FR', 'BE', 'CH', 'CA', 'US', 'GB', 'DE']) {
+      final list = byCountry[c];
+      if (list == null) continue;
+      for (final cert in list) {
+        final a = _certToAge(cert);
+        if (a != null && (age == null || a > age)) age = a;
+      }
+      if (age != null) break;
+    }
+    if (data['adult'] == true) age = 18;
+    return (age: age, horror: horror);
+  }
+
+  static int? _certToAge(String cert) {
+    final c = cert.trim().toUpperCase();
+    const map = {
+      'U': 0, 'TP': 0, 'TOUS PUBLICS': 0, 'G': 0, 'TV-Y': 0, 'TV-G': 0,
+      'TV-Y7': 7, 'PG': 7, 'TV-PG': 10, 'PG-13': 12, 'TV-14': 14,
+      'R': 16, 'TV-MA': 17, 'NC-17': 18, 'X': 18, 'A': 0, '12A': 12,
+      'FSK 0': 0, 'FSK 6': 6, 'FSK 12': 12, 'FSK 16': 16, 'FSK 18': 18,
+    };
+    if (map.containsKey(c)) return map[c];
+    final digits = RegExp(r'(\d{1,2})').firstMatch(c);
+    return digits != null ? int.parse(digits.group(1)!) : null;
   }
 }

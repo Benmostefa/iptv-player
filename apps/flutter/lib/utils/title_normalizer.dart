@@ -91,7 +91,10 @@ class TitleNormalizer {
       RegExp(r'^\s*([A-Za-z0-9+]{2,8})\s*[-:–|]\s+');
 
   static final _yearAtEnd = RegExp(r'[\(\[\s\-]((?:19|20)\d{2})[\)\]]?\s*$');
-  static final _yearInParens = RegExp(r'[\(\[]((?:19|20)\d{2})[\)\]]');
+  // "(2025)", mais aussi "(2025 MULTI)" ou "(VF 2025)".
+  static final _yearInParens = RegExp(
+    r'[\(\[]([^\)\]]*?)\b((?:19|20)\d{2})\b([^\)\]]*)[\)\]]',
+  );
 
   static ParsedTitle parse(String raw) {
     final cached = _cache[raw];
@@ -161,8 +164,19 @@ class TitleNormalizer {
     // 3. Année.
     String? year;
     final yParens = _yearInParens.firstMatch(s);
-    if (yParens != null) {
-      year = yParens.group(1);
+    final yExtra = yParens == null
+        ? null
+        : '${yParens.group(1)} ${yParens.group(3)}'
+            .split(RegExp(r'[\s/,+\-]+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
+    if (yParens != null &&
+        yExtra!.every((t) =>
+            _languageTags.contains(t.toUpperCase()) ||
+            RegExp(r'^(4k|uhd|fhd|hd|sd|\d{3,4}p|hdr)$', caseSensitive: false)
+                .hasMatch(t))) {
+      year = yParens.group(2);
+      _collectLanguages(yExtra.join(' '), languages);
       s = s.replaceRange(yParens.start, yParens.end, ' ');
     } else {
       final yEnd = _yearAtEnd.firstMatch(s);
