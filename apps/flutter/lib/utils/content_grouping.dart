@@ -54,6 +54,47 @@ class ContentGrouping {
     }).toList();
   }
 
+  /// Clés de regroupement pour une liste de noms (fonction pure, utilisable
+  /// dans un isolate avec `compute` pour les gros catalogues).
+  static List<String> groupKeysFor(List<String> names) {
+    final parsed = names.map(TitleNormalizer.parse).toList();
+    final yearsByKey = <String, Set<String>>{};
+    for (final p in parsed) {
+      if (p.year != null) yearsByKey.putIfAbsent(p.key, () => {}).add(p.year!);
+    }
+    return parsed.map((p) {
+      if (p.year != null) return '${p.key}|${p.year}';
+      final years = yearsByKey[p.key];
+      if (years != null && years.length == 1) return '${p.key}|${years.first}';
+      return p.key;
+    }).toList();
+  }
+
+  /// Regroupe à partir de clés déjà calculées (voir [groupKeysFor]).
+  static List<ContentItem> groupByKeys(
+    List<ContentItem> items,
+    List<String> keys,
+  ) {
+    final groups = <String, List<ContentItem>>{};
+    final order = <String>[];
+    for (var i = 0; i < items.length; i++) {
+      final list = groups[keys[i]];
+      if (list == null) {
+        groups[keys[i]] = [items[i]];
+        order.add(keys[i]);
+      } else {
+        list.add(items[i]);
+      }
+    }
+    return order.map((k) {
+      final versions = groups[k]!;
+      final sorted = versions.length > 1 ? sortVersions(versions) : versions;
+      final main = sorted.first;
+      main.variants = sorted;
+      return main;
+    }).toList();
+  }
+
   /// Trie les versions de la meilleure à la moins bonne qualité.
   static List<ContentItem> sortVersions(List<ContentItem> versions) {
     final sorted = [...versions];

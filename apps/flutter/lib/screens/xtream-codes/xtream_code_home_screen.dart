@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/widgets/content_browser.dart';
 import 'package:another_iptv_player/widgets/update_dialog.dart';
 import 'package:another_iptv_player/screens/actor_search_screen.dart';
 import 'package:another_iptv_player/l10n/localization_extension.dart';
@@ -175,7 +176,18 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
   ) {
     return Scaffold(
       appBar: _buildAppBar(context, controller, contentType),
-      body: _buildCategoryList(categories, contentType),
+      body: contentType == ContentType.liveStream
+          ? _buildCategoryList(categories, contentType)
+          : ContentBrowser(
+              // Clé : la page se recharge si on masque/affiche des catégories.
+              key: ValueKey(
+                '${contentType.name}_${contentType == ContentType.vod ? controller.visibleMovieCategories.length : controller.visibleSeriesCategories.length}',
+              ),
+              categories: contentType == ContentType.vod
+                  ? controller.visibleMovieCategories
+                  : controller.visibleSeriesCategories,
+              contentType: contentType,
+            ),
     );
   }
 

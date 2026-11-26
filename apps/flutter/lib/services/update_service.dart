@@ -109,30 +109,47 @@ class UpdateService {
       client.close();
     }
 
-    // 2. Script qui attend la fermeture de l'appli, remplace et relance.
+    // 2. Script PowerShell (fenêtre cachée) : attend la fermeture de
+    //    l'appli (et la force au bout de 8 s), remplace les fichiers, relance.
     final appDir = File(Platform.resolvedExecutable).parent.path;
-    final exeName = Platform.resolvedExecutable.split('\\').last;
+    final exePath = Platform.resolvedExecutable;
+    String q(String v) => v.replaceAll("'", "''"); // échappement PowerShell
     final script = '''
-@echo off
-chcp 65001 >nul
-:wait
-tasklist /FI "PID eq $pid" 2>nul | find "$pid" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait
-)
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '$zipPath' -DestinationPath '$extractDir' -Force"
-robocopy "$extractDir" "$appDir" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >nul
-start "" "$appDir\\$exeName"
+\$ErrorActionPreference = 'SilentlyContinue'
+\$log = '${q(tempDir.path)}\\update.log'
+"Début \$(Get-Date)" | Out-File \$log
+Wait-Process -Id $pid -Timeout 8
+Stop-Process -Id $pid -Force
+Start-Sleep -Seconds 1
+Expand-Archive -LiteralPath '${q(zipPath)}' -DestinationPath '${q(extractDir)}' -Force
+for (\$i = 0; \$i -lt 10; \$i++) {
+  try {
+    Copy-Item -Path '${q(extractDir)}\\*' -Destination '${q(appDir)}' -Recurse -Force -ErrorAction Stop
+    "Copie OK" | Out-File \$log -Append
+    break
+  } catch {
+    "Essai \$i : \$_" | Out-File \$log -Append
+    Start-Sleep -Seconds 1
+  }
+}
+Start-Process -FilePath '${q(exePath)}' -WorkingDirectory '${q(appDir)}'
 ''';
-    final scriptFile = File('${tempDir.path}\\update.bat');
-    await scriptFile.writeAsString(script.replaceAll('\n', '\r\n'));
+    final scriptFile = File('${tempDir.path}\\update.ps1');
+    // BOM UTF-8 pour que PowerShell lise bien les accents des chemins.
+    await scriptFile.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode(script)]);
 
     await Process.start(
-      'cmd',
-      ['/c', scriptFile.path],
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        scriptFile.path,
+      ],
       mode: ProcessStartMode.detached,
-      runInShell: false,
     );
 
     // 3. Ferme l'application pour libérer les fichiers.
