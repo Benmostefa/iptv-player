@@ -9,6 +9,7 @@ import 'controllers/theme_provider.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/supported_languages.dart';
 import 'utils/app_themes.dart';
+import 'utils/mouse_navigation.dart';
 
 Future<void> main() async {
   await setupServiceLocator();
@@ -46,6 +47,11 @@ class MyApp extends StatelessWidget {
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
       themeMode: themeProvider.themeMode,
+      navigatorKey: appNavigatorKey,
+      navigatorObservers: [MouseNavigationObserver.instance],
+      // Boutons Retour / Avancer de la souris.
+      builder: (context, child) =>
+          MouseNavigationListener(child: child ?? const SizedBox.shrink()),
       home: AppInitializerScreen(),
       debugShowCheckedModeBanner: false,
     );
