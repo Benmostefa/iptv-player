@@ -8,6 +8,8 @@ import '../../widgets/server_info_widget.dart';
 import '../../widgets/status_card_widget.dart';
 import '../../widgets/subscription_info_widget.dart';
 import '../settings/general_settings_section.dart';
+import 'package:another_iptv_player/widgets/subscription_account_card.dart';
+import 'package:another_iptv_player/screens/xtream-codes/xtream_code_data_loader_screen.dart';
 
 class XtreamCodePlaylistSettingsScreen extends StatefulWidget {
   final Playlist playlist;
@@ -53,6 +55,19 @@ class _XtreamCodePlaylistSettingsScreenState
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         children: [
+          SubscriptionAccountCard(
+            playlist: widget.playlist,
+            onRenewed: (updated) {
+              // Recharge l'application avec le nouveau code.
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (_) => XtreamCodeDataLoaderScreen(playlist: updated),
+                ),
+                (route) => false,
+              );
+            },
+          ),
+          const SizedBox(height: 12),
           StatusCardWidget(serverInfo: _serverInfo),
           const SizedBox(height: 12),
           const GeneralSettingsWidget(),

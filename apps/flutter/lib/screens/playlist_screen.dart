@@ -8,6 +8,7 @@ import '../../widgets/playlist_states.dart';
 import 'playlist_type_screen.dart';
 import 'package:another_iptv_player/services/app_state.dart';
 import 'package:another_iptv_player/services/catalog_index.dart';
+import 'package:another_iptv_player/widgets/subscription_account_card.dart';
 
 class PlaylistScreen extends StatefulWidget {
   const PlaylistScreen({super.key});
@@ -149,11 +150,27 @@ class _PlaylistScreenBody extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(
+  Future<void> _showEditDialog(
     BuildContext context,
     PlaylistController controller,
     Playlist playlist,
-  ) {
+  ) async {
+    if (playlist.type == PlaylistType.xtream) {
+      // Nouveau mois : seulement le nouveau code, vérifié chez le fournisseur.
+      final updated = await showRenewSubscriptionDialog(context, playlist);
+      if (updated != null && context.mounted) {
+        await controller.loadPlaylists(context);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nouveau code enregistré : favoris et historique conservés'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+      return;
+    }
     showDialog(
       context: context,
       builder: (dialogContext) => _EditPlaylistDialog(

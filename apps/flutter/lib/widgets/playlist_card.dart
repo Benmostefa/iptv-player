@@ -148,9 +148,9 @@ class _PlaylistMenu extends StatelessWidget {
             value: 'edit',
             child: Row(
               children: [
-                Icon(Icons.edit, size: 20),
+                Icon(Icons.autorenew, size: 20),
                 SizedBox(width: 8),
-                Text('Modifier / nouveau code'),
+                Text('Nouveau code (nouveau mois)'),
               ],
             ),
           ),
