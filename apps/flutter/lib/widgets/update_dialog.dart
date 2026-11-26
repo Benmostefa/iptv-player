@@ -119,8 +119,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               ),
             ] else
               const Text(
-                'L\'application va se fermer quelques secondes puis se '
-                'relancer toute seule. Tes favoris, abonnements et réglages '
+                'L\'application installe la mise à jour, se ferme puis se '
+                'relance. Si elle ne se rouvre pas toute seule, relance-la : '
+                'la nouvelle version sera là. Favoris, abonnements et réglages '
                 'sont conservés.',
                 style: TextStyle(fontSize: 13),
               ),

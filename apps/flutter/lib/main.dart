@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/services/update_service.dart';
 import 'package:another_iptv_player/services/kids_mode.dart';
 import 'package:another_iptv_player/controllers/playlist_controller.dart';
 import 'package:another_iptv_player/screens/app_initializer_screen.dart';
@@ -15,6 +16,7 @@ import 'utils/mouse_navigation.dart';
 Future<void> main() async {
   await setupServiceLocator();
   await KidsMode.load();
+  UpdateService.cleanupOldFiles();
   runApp(
     MultiProvider(
       providers: [

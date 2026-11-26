@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
 
 /// Une version publiée sur GitHub (onglet "Releases" de ta copie).
@@ -72,8 +73,22 @@ class UpdateService {
     );
   }
 
-  /// Télécharge la mise à jour, puis ferme l'application : un petit script
-  /// remplace les fichiers et relance la nouvelle version.
+  /// Supprime les fichiers ".old" laissés par une mise à jour précédente.
+  static Future<void> cleanupOldFiles() async {
+    if (!Platform.isWindows) return;
+    try {
+      final dir = File(Platform.resolvedExecutable).parent;
+      await for (final f in dir.list(recursive: true)) {
+        if (f is File && f.path.endsWith('.old')) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Télécharge la mise à jour, remplace les fichiers, relance l'appli.
   static Future<void> downloadAndInstall(
     AppUpdate update, {
     void Function(double progress)? onProgress,
@@ -85,7 +100,6 @@ class UpdateService {
     await tempDir.create(recursive: true);
 
     final zipPath = '${tempDir.path}\\update.zip';
-    final extractDir = '${tempDir.path}\\files';
 
     // 1. Téléchargement avec progression.
     final client = http.Client();
@@ -109,50 +123,58 @@ class UpdateService {
       client.close();
     }
 
-    // 2. Script PowerShell (fenêtre cachée) : attend la fermeture de
-    //    l'appli (et la force au bout de 8 s), remplace les fichiers, relance.
+    // 2. Installation par l'application elle-même (sans programme externe,
+    //    que Windows peut bloquer) : Windows permet de RENOMMER un fichier en
+    //    cours d'utilisation ; on renomme l'ancien en ".old" puis on écrit le
+    //    nouveau à sa place. Les ".old" sont supprimés au prochain démarrage.
     final appDir = File(Platform.resolvedExecutable).parent.path;
-    final exePath = Platform.resolvedExecutable;
-    String q(String v) => v.replaceAll("'", "''"); // échappement PowerShell
-    final script = '''
-\$ErrorActionPreference = 'SilentlyContinue'
-\$log = '${q(tempDir.path)}\\update.log'
-"Début \$(Get-Date)" | Out-File \$log
-Wait-Process -Id $pid -Timeout 8
-Stop-Process -Id $pid -Force
-Start-Sleep -Seconds 1
-Expand-Archive -LiteralPath '${q(zipPath)}' -DestinationPath '${q(extractDir)}' -Force
-for (\$i = 0; \$i -lt 10; \$i++) {
-  try {
-    Copy-Item -Path '${q(extractDir)}\\*' -Destination '${q(appDir)}' -Recurse -Force -ErrorAction Stop
-    "Copie OK" | Out-File \$log -Append
-    break
-  } catch {
-    "Essai \$i : \$_" | Out-File \$log -Append
-    Start-Sleep -Seconds 1
-  }
-}
-Start-Process -FilePath '${q(exePath)}' -WorkingDirectory '${q(appDir)}'
-''';
-    final scriptFile = File('${tempDir.path}\\update.ps1');
-    // BOM UTF-8 pour que PowerShell lise bien les accents des chemins.
-    await scriptFile.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode(script)]);
+    final bytes = await File(zipPath).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
 
-    await Process.start(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-WindowStyle',
-        'Hidden',
-        '-File',
-        scriptFile.path,
-      ],
-      mode: ProcessStartMode.detached,
-    );
+    // Garde la trace pour tout remettre comme avant en cas d'erreur.
+    final renamed = <(String original, String backup)>[];
+    final written = <String>[];
+    try {
+      for (final entry in archive) {
+        if (!entry.isFile) continue;
+        final rel = entry.name.replaceAll('/', '\\');
+        final target = File('$appDir\\$rel');
+        await target.parent.create(recursive: true);
+        if (await target.exists()) {
+          final backup = '${target.path}.$stamp.old';
+          await target.rename(backup);
+          renamed.add((target.path, backup));
+        }
+        await target.writeAsBytes(entry.content as List<int>, flush: true);
+        written.add(target.path);
+      }
+    } catch (e) {
+      for (final path in written) {
+        try {
+          await File(path).delete();
+        } catch (_) {}
+      }
+      for (final r in renamed.reversed) {
+        try {
+          await File(r.$2).rename(r.$1);
+        } catch (_) {}
+      }
+      throw Exception('Installation impossible : $e');
+    }
 
-    // 3. Ferme l'application pour libérer les fichiers.
+    // 3. Relance la nouvelle version puis ferme celle-ci.
+    try {
+      await Process.start(
+        Platform.resolvedExecutable,
+        const [],
+        workingDirectory: appDir,
+        mode: ProcessStartMode.detached,
+      );
+    } catch (_) {
+      // Si Windows refuse, l'utilisateur relance l'appli lui-même.
+    }
+    await Future.delayed(const Duration(milliseconds: 300));
     exit(0);
   }
 }
