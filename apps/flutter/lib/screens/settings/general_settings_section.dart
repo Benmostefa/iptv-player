@@ -1,3 +1,5 @@
+import 'package:another_iptv_player/services/update_service.dart';
+import 'package:another_iptv_player/widgets/update_dialog.dart';
 import 'package:another_iptv_player/widgets/tmdb_key_dialog.dart';
 import 'package:another_iptv_player/database/database.dart';
 import 'package:another_iptv_player/screens/settings/subtitle_settings_section.dart';
@@ -141,6 +143,16 @@ class _GeneralSettingsWidgetState extends State<GeneralSettingsWidget> {
                 );
               }
             },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.system_update_alt),
+            title: const Text('Rechercher une mise à jour'),
+            subtitle: Text(UpdateService.currentLabel),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => checkForUpdates(context),
           ),
         ),
         const SizedBox(height: 10),

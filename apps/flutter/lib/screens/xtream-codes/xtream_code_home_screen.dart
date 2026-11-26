@@ -1,3 +1,4 @@
+import 'package:another_iptv_player/widgets/update_dialog.dart';
 import 'package:another_iptv_player/screens/actor_search_screen.dart';
 import 'package:another_iptv_player/l10n/localization_extension.dart';
 import 'package:another_iptv_player/screens/search_screen.dart';
@@ -45,6 +46,7 @@ class _XtreamCodeHomeScreenState extends State<XtreamCodeHomeScreen> {
   void initState() {
     super.initState();
     _initializeController();
+    checkForUpdatesOnce(context);
   }
 
   @override

@@ -60,12 +60,12 @@ class TitleNormalizer {
   // Tags de langue qu'on accepte de retirer en fin de titre.
   static const _trailingLanguageTags = {
     'FR', 'VF', 'VFF', 'VFQ', 'VFI', 'VO', 'VOST', 'VOSTFR', 'TRUEFRENCH',
-    'FRENCH', 'MULTI', 'ENG', 'SUB',
+    'FRENCH', 'MULTI', 'ENG', 'SUB', 'SUBFRENCH', 'VOSTA',
   };
 
   // Tags techniques à retirer du titre (hors qualité, traitée à part).
   static final _technicalTag = RegExp(
-    r'\b(hevc|x26[45]|h\.?26[45]|10\s?bits?|hdr10\+?|hdr|dolby\s?vision|dv|'
+    r'\b(hevc|x26[45]|h[.\s]?26[45]|10\s?bits?|hdr10\+?|hdr|dolby\s?vision|dv|'
     r'atmos|dts(?:-?hd)?|truehd|ac3|e-?ac3|aac|web-?dl|webrip|bluray|blu-ray|'
     r'brrip|bdrip|remux|imax|3d|extended|director.?s cut|uncut)\b',
     caseSensitive: false,
@@ -110,6 +110,12 @@ class TitleNormalizer {
 
   static ParsedTitle _parse(String raw) {
     var s = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // Noms façon fichier : "Avatar.2009.MULTI.2160p" → "Avatar 2009 MULTI 2160p".
+    final dots = '.'.allMatches(s).length + '_'.allMatches(s).length;
+    if (dots >= 2 && ' '.allMatches(s).length < dots) {
+      s = s.replaceAll(RegExp(r'[._]+'), ' ').trim();
+    }
     final languages = <String>[];
 
     // Qualité (détectée sur le nom complet, préfixes compris).
@@ -195,7 +201,7 @@ class TitleNormalizer {
       } else if (_trailingLanguageTags.contains(last.toUpperCase()) &&
           last.length >= 2 &&
           words.length > 1 &&
-          words.last == words.last.toUpperCase()) {
+          (last.length >= 4 || words.last == words.last.toUpperCase())) {
         _collectLanguages(last, languages);
         words.removeLast();
       } else {
@@ -203,6 +209,15 @@ class TitleNormalizer {
       }
     }
     s = words.join(' ');
+
+    // Année placée avant les tags : "Avatar 2009 MULTI 2160p".
+    if (year == null) {
+      final yEnd = _yearAtEnd.firstMatch(s.trimRight());
+      if (yEnd != null && yEnd.start > 0) {
+        year = yEnd.group(1);
+        s = s.substring(0, yEnd.start);
+      }
+    }
 
     var title = s
         .replaceAll(RegExp(r'\s+'), ' ')

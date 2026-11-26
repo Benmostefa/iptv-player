@@ -421,23 +421,6 @@ class _MovieScreenState extends State<MovieScreen> {
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              tooltip: _isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
-              icon: Icon(
-                _isFavorite ? Icons.favorite : Icons.favorite_border,
-                color: _isFavorite ? Colors.red : Colors.white,
-              ),
-              onPressed: _toggleFavorite,
-            ),
-          ),
-        ],
       ),
       body: Stack(
         fit: StackFit.expand,
@@ -540,6 +523,8 @@ class _MovieScreenState extends State<MovieScreen> {
           _buildRatingSection(context)!,
           const SizedBox(height: 16),
         ],
+        _buildActionRow(context, WrapAlignment.center),
+        const SizedBox(height: 16),
         if (_buildInfoChips(context) != null) ...[
           _buildInfoChips(context)!,
           const SizedBox(height: 24),
@@ -564,10 +549,6 @@ class _MovieScreenState extends State<MovieScreen> {
           _buildTmdbHint(context),
           const SizedBox(height: 24),
         ],
-        if (_buildTrailerButton(context) != null) ...[
-          _buildTrailerButton(context)!,
-          const SizedBox(height: 24),
-        ],
       ],
     );
   }
@@ -588,6 +569,8 @@ class _MovieScreenState extends State<MovieScreen> {
                 _buildRatingSection(context)!,
                 const SizedBox(height: 16),
               ],
+              _buildActionRow(context, WrapAlignment.start),
+              const SizedBox(height: 16),
               if (_buildInfoChips(context) != null) ...[
                 _buildInfoChips(context)!,
                 const SizedBox(height: 24),
@@ -610,13 +593,6 @@ class _MovieScreenState extends State<MovieScreen> {
               ],
               if (!_tmdbConfigured) ...[
                 _buildTmdbHint(context),
-                const SizedBox(height: 24),
-              ],
-              if (_buildTrailerButton(context) != null) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: _buildTrailerButton(context)!,
-                ),
                 const SizedBox(height: 24),
               ],
             ],
@@ -1060,6 +1036,31 @@ class _MovieScreenState extends State<MovieScreen> {
       icon: const Icon(Icons.info_outline),
       label: const Text('Résumé FR, note et acteurs : ajouter une clé TMDB'),
       style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
+    );
+  }
+
+  /// Boutons à côté des infos : favori + bande-annonce.
+  Widget _buildActionRow(BuildContext context, WrapAlignment alignment) {
+    final trailer = _buildTrailerButton(context);
+    return Wrap(
+      alignment: alignment,
+      spacing: 12,
+      runSpacing: 8,
+      children: [
+        FilledButton.tonalIcon(
+          onPressed: _toggleFavorite,
+          icon: Icon(
+            _isFavorite ? Icons.favorite : Icons.favorite_border,
+            color: _isFavorite ? Colors.red : Colors.white,
+          ),
+          label: Text(_isFavorite ? 'Dans mes favoris' : 'Ajouter aux favoris'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white.withOpacity(0.12),
+            foregroundColor: Colors.white,
+          ),
+        ),
+        if (trailer != null) trailer,
+      ],
     );
   }
 
